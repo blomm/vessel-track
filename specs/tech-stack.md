@@ -100,12 +100,54 @@
   - Lock file for reproducible builds
   - Virtual environment management
 
+## Event Streaming
+
+### Apache Kafka
+- **Kafka 3.x** (Confluent distribution)
+  - Distributed event streaming platform
+  - High-throughput message broker
+  - Persistent event log with replay capability
+
+**Why Kafka?**
+- **Proven Scalability**: Used by LinkedIn (1+ trillion messages/day), Uber, Netflix
+- **Event Sourcing**: Complete audit trail, replay historical events
+- **Decoupling**: Services communicate via events, not direct calls
+- **Async Processing**: API responds instantly, heavy processing happens async
+- **Horizontal Scaling**: Add more consumers to increase throughput
+- **Fault Tolerance**: Built-in replication and failover
+
+**Comparison with Alternatives**:
+| Feature | Kafka | RabbitMQ | AWS Kinesis | Redis Streams |
+|---------|-------|----------|-------------|---------------|
+| Throughput | Very High | Medium | High | Medium |
+| Persistence | Yes (configurable) | Optional | Yes (24h-365d) | Limited |
+| Replay | Yes | No | Yes | Limited |
+| Scaling | Excellent | Good | Automatic | Limited |
+| Ops Complexity | Medium | Low | Very Low | Very Low |
+| Cost | Self-hosted | Self-hosted | Pay per shard | Self-hosted |
+| **Best For** | High-volume event streaming | Simple pub/sub | AWS ecosystem | Simple use cases |
+
+**Choice**: Kafka chosen for proven scalability, event replay capability, and excellent horizontal scaling for prediction workloads.
+
+### Zookeeper
+- **Zookeeper 3.x** (or KRaft mode in Kafka 3.3+)
+  - Kafka cluster coordination
+  - Leader election
+  - Configuration management
+
+### Python Kafka Client
+- **confluent-kafka-python**
+  - High-performance librdkafka-based client
+  - Producer/consumer with async support
+  - Type-safe with Pydantic schemas
+
 ## Infrastructure & DevOps
 
 ### Containerization
 - **Docker** & **Docker Compose**
   - PostgreSQL with pgvector
   - Redis
+  - Kafka + Zookeeper
   - Service orchestration
 
 ### Web Server
@@ -176,6 +218,22 @@ EMBEDDING_DIMENSION=1536
 
 # WebSocket
 WS_HEARTBEAT_INTERVAL=30
+
+# Kafka
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+KAFKA_CONSUMER_GROUP=vessel-track-workers
+KAFKA_AUTO_OFFSET_RESET=latest
+KAFKA_ENABLE_AUTO_COMMIT=true
+
+# Kafka Topics
+KAFKA_VESSEL_POSITIONS_TOPIC=vessel-position-updates
+KAFKA_PREDICTION_REQUESTS_TOPIC=prediction-requests
+KAFKA_PREDICTION_RESULTS_TOPIC=prediction-results
+
+# Kafka Performance
+KAFKA_COMPRESSION_TYPE=gzip
+KAFKA_BATCH_SIZE=16384
+KAFKA_LINGER_MS=10
 ```
 
 ## Project Structure
@@ -273,11 +331,18 @@ vessel-track/
 ## Performance Characteristics
 
 ### Backend
-- **Response time**: <100ms for most endpoints
-- **Prediction latency**: 2-5 seconds (includes GPT-4o call)
+- **API Response time**: <50ms (event-driven, non-blocking)
+- **End-to-end prediction latency**: 2-5 seconds (async processing includes GPT-4o call)
 - **WebSocket latency**: <50ms for broadcasts
 - **Database queries**: <10ms (indexed queries)
 - **Vector search**: <100ms (pgvector similarity)
+
+### Event Streaming (Kafka)
+- **Producer latency**: <10ms to publish event
+- **Consumer latency**: <50ms from Kafka to consumer
+- **Throughput**: 100-1,000 events/second (vessel positions)
+- **Event retention**: 7 days (configurable)
+- **Replay capability**: Full event history reprocessing
 
 ### Frontend
 - **Initial load**: <2 seconds
@@ -286,7 +351,8 @@ vessel-track/
 - **WebSocket reconnect**: <3 seconds
 
 ### Scalability
-- **Concurrent users**: 100s (current setup)
-- **Vessels tracked**: 1000s (with clustering)
-- **Predictions/hour**: 10,000+
+- **Concurrent users**: 100s (current setup), 1000s+ (with load balancing)
+- **Vessels tracked**: 1000s (with clustering), 10,000+ (with Kafka partitioning)
+- **Predictions/hour**: 10,000+ (single worker), 100,000+ (10 workers)
 - **Database**: Scalable to millions of records
+- **Horizontal scaling**: Add more Kafka consumers for increased throughput

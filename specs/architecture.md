@@ -5,37 +5,51 @@ Vessel Track is a full-stack AI-powered application for tracking LNG tanker vess
 
 ## System Architecture
 
-### High-Level Architecture
+### High-Level Architecture (Event-Driven)
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Frontend (Next.js)                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  Map Display │  │  WebSocket   │  │  API Client  │      │
-│  │   (Mapbox)   │  │   Client     │  │              │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└────────────────┬────────────────┬────────────────────────────┘
-                 │                │
-                 │ HTTP/WS        │
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Frontend (Next.js)                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │  Map Display │  │  WebSocket   │  │  API Client  │              │
+│  │   (Mapbox)   │  │   Client     │  │              │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
+└────────────────┬────────────────┬───────────────────────────────────┘
+                 │ HTTP           │ WebSocket
                  ▼                ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Backend (FastAPI)                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  REST API    │  │  WebSocket   │  │  Background  │      │
-│  │  Endpoints   │  │   Manager    │  │    Tasks     │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  Prediction  │  │  AI Service  │  │  RAG Service │      │
-│  │   Engine     │  │  (GPT-4o)    │  │  (pgvector) │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  Learning    │  │  Embedding   │  │    Slack     │      │
-│  │   Service    │  │   Service    │  │  Notifier    │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└────────────────┬────────────────┬────────────────────────────┘
-                 │                │
-                 ▼                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                       Backend (FastAPI)                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │  REST API    │  │  WebSocket   │  │  Background  │              │
+│  │  Endpoints   │  │   Manager    │  │    Tasks     │              │
+│  └──────┬───────┘  └──────▲───────┘  └──────────────┘              │
+│         │                  │                                         │
+│         │ publish          │ subscribe                               │
+│         ▼                  │                                         │
+│  ┌─────────────────────────────────────────────────┐                │
+│  │           Apache Kafka Event Broker              │                │
+│  │  ┌──────────────────┐  ┌──────────────────┐    │                │
+│  │  │ vessel-position- │  │ prediction-      │    │                │
+│  │  │    updates       │  │   requests       │    │                │
+│  │  └──────────────────┘  └──────────────────┘    │                │
+│  │  ┌──────────────────┐                          │                │
+│  │  │ prediction-      │                          │                │
+│  │  │   results        │                          │                │
+│  │  └──────────────────┘                          │                │
+│  └─────────────────────────────────────────────────┘                │
+│         │                  │                  │                     │
+│         ▼                  ▼                  ▼                     │
+│  ┌─────────────┐    ┌─────────────┐   ┌─────────────┐             │
+│  │  Position   │    │ Prediction  │   │  Result     │             │
+│  │  Consumer   │    │   Worker    │   │ Consumers   │             │
+│  │             │    │             │   │ (DB/WS/     │             │
+│  │             │    │ Prediction  │   │  Slack/     │             │
+│  │             │    │  Engine     │   │  Learning)  │             │
+│  │             │    │ RAG Service │   │             │             │
+│  │             │    │ AI Service  │   │             │             │
+│  └─────────────┘    └─────────────┘   └─────────────┘             │
+└────────────────┬────────────────┬────────────────┬──────────────────┘
+                 │                │                │
+                 ▼                ▼                ▼
 ┌──────────────────────┐  ┌────────────────────────┐
 │  PostgreSQL          │  │  Redis                 │
 │  + pgvector          │  │  (Caching)             │
@@ -49,6 +63,14 @@ Vessel Track is a full-stack AI-powered application for tracking LNG tanker vess
 │  - text-embedding-3-small (RAG)      │
 └──────────────────────────────────────┘
 ```
+
+### Key Architectural Patterns
+
+**Event-Driven Architecture**: The system uses Apache Kafka as a central event broker to decouple services and enable asynchronous processing. This provides:
+- **Low API latency**: API returns in <50ms, processing happens asynchronously
+- **Horizontal scalability**: Multiple worker instances process events in parallel
+- **Resilience**: Failed operations retry automatically
+- **Observability**: Complete audit trail of all events
 
 ## Backend Architecture (FastAPI)
 
@@ -227,26 +249,55 @@ interface Vessel {
 
 ## Data Flow
 
-### Prediction Pipeline
+### Event-Driven Prediction Pipeline
+
+**Synchronous Phase** (API Request):
 ```
-1. Vessel position update
+1. API receives vessel position update (PUT /vessels/{id})
    ↓
-2. Traditional algorithm calculates base scores
+2. Update vessel record in PostgreSQL
    ↓
-3. RAG service retrieves similar historical journeys
+3. Publish VesselPositionUpdateEvent to Kafka
    ↓
-4. AI service analyzes all context with GPT-4o
-   ↓
-5. Final confidence score calculated
-   ↓
-6. Prediction stored in database
-   ↓
-7. WebSocket broadcast to frontend
-   ↓
-8. Map updates with new prediction
-   ↓
-9. Slack notification if confidence ≥ 80%
+4. Return 202 Accepted to client (<50ms total)
 ```
+
+**Asynchronous Processing Phase** (Event-Driven):
+```
+5. Position Consumer receives event
+   ↓
+6. Check if vessel within range of terminals
+   ↓
+7. Publish PredictionRequestEvent to Kafka
+   ↓
+8. Prediction Worker consumes request
+   ↓
+9. Traditional algorithm calculates base scores
+   ↓
+10. RAG service retrieves similar historical journeys (pgvector)
+    ↓
+11. AI service analyzes all context with GPT-4o (2-5s)
+    ↓
+12. Final confidence score calculated
+    ↓
+13. Save prediction to PostgreSQL
+    ↓
+14. Publish PredictionResultEvent to Kafka
+    ↓
+15. Multiple Consumers process result in parallel:
+    - DB Writer: Persist to database (if needed)
+    - WebSocket Broadcaster: Push to connected clients
+    - Slack Notifier: Send alert if confidence ≥ 80%
+    - Learning Service: Prepare for outcome tracking
+    ↓
+16. Frontend receives WebSocket update
+    ↓
+17. Map updates with new prediction
+```
+
+**Total Latency**:
+- **API Response**: <50ms (immediate)
+- **End-to-End** (position update → frontend update): 2-5 seconds (async)
 
 ### Learning Feedback Loop
 ```
@@ -265,7 +316,76 @@ interface Vessel {
 7. Future predictions benefit from learned patterns
 ```
 
+## Event Streams
+
+The system uses three core Kafka event streams for asynchronous processing:
+
+### 1. vessel-position-updates
+**Purpose**: Real-time vessel location and state changes
+
+**Producers**: API endpoints, AIS data ingestion (future)
+
+**Consumers**: Position analyzer (triggers predictions), WebSocket broadcaster, journey tracker
+
+**Schema**: `VesselPositionUpdateEvent`
+```json
+{
+  "event_id": "uuid",
+  "event_type": "vessel.position.updated",
+  "vessel_id": "lng-001",
+  "data": {"lat": 29.76, "lon": -95.36, "speed": 12.5, "heading": 275.0}
+}
+```
+
+### 2. prediction-requests
+**Purpose**: Trigger asynchronous prediction analysis
+
+**Producers**: Position consumer (when in range), scheduled jobs, manual API
+
+**Consumers**: Prediction worker pool (horizontally scaled)
+
+**Schema**: `PredictionRequestEvent`
+```json
+{
+  "event_id": "uuid",
+  "request_id": "req-12345",
+  "vessel_id": "lng-001",
+  "data": {"vessel_snapshot": {...}, "priority": "normal"}
+}
+```
+
+### 3. prediction-results
+**Purpose**: Completed predictions ready for consumption
+
+**Producers**: Prediction workers (after AI analysis)
+
+**Consumers**: DB writer, WebSocket broadcaster, Slack notifier, learning service
+
+**Schema**: `PredictionResultEvent`
+```json
+{
+  "event_id": "uuid",
+  "request_id": "req-12345",
+  "vessel_id": "lng-001",
+  "data": {
+    "prediction_id": "pred-789",
+    "terminal_name": "Sabine Pass LNG",
+    "confidence_score": 0.87,
+    "ai_reasoning": "..."
+  }
+}
+```
+
+**Complete Event Stream Documentation**: See [Kafka Architecture](kafka-architecture.md) for detailed schemas, configurations, and processing patterns.
+
 ## Scalability Considerations
+
+### Event-Driven Processing (Kafka)
+- **Horizontal Scaling**: Add more consumer instances to process events in parallel
+- **Partitioning**: Events distributed across partitions by vessel_id for load balancing
+- **Consumer Groups**: Multiple instances share partition load automatically
+- **Backpressure Handling**: Kafka queues events when consumers are busy
+- **Replay Capability**: Reprocess historical events for debugging or retraining
 
 ### Database
 - Connection pooling (10 connections + 20 overflow)
@@ -275,7 +395,7 @@ interface Vessel {
 
 ### API
 - FastAPI async endpoints
-- Background tasks for long-running operations
+- Event-driven processing (non-blocking, <50ms response)
 - Response pagination for large datasets
 - CORS configuration for multi-origin support
 
@@ -289,6 +409,11 @@ interface Vessel {
 - Prediction result caching (5 min TTL)
 - Terminal data caching (static)
 
+### Worker Scaling
+- **Prediction Workers**: Scale to 3-10 instances based on load
+- **Consumer Parallelism**: Each partition processed by different instance
+- **Independent Scaling**: Scale DB writers, WebSocket broadcasters separately
+
 ## Technology Stack Integration
 
 ### Backend Stack
@@ -298,6 +423,7 @@ interface Vessel {
 - **pgvector**: Vector similarity search
 - **Pydantic**: Data validation
 - **OpenAI**: GPT-4o + embeddings
+- **confluent-kafka**: Kafka client library
 
 ### Frontend Stack
 - **Next.js 15**: React framework
@@ -305,8 +431,14 @@ interface Vessel {
 - **Mapbox GL JS**: Map visualization
 - **WebSocket API**: Real-time updates
 
+### Event Streaming
+- **Apache Kafka**: Event broker for asynchronous processing
+- **Zookeeper**: Kafka coordination service (or KRaft mode)
+- **Event Schemas**: Pydantic models for type-safe event handling
+
 ### Infrastructure
 - **PostgreSQL 16**: Primary database
 - **Redis 7**: Caching layer
+- **Kafka 3.x**: Event streaming platform
 - **Docker**: Containerization
 - **Poetry**: Python dependency management

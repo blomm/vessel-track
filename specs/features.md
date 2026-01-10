@@ -2,7 +2,37 @@
 
 ## Core Features (Implemented)
 
-### 1. Interactive Map Visualization
+### 1. Event-Driven Architecture
+
+**Purpose**: Asynchronous, scalable processing using Apache Kafka
+
+**Key Benefits**:
+- **Fast API Response**: <50ms (vs 5-10s synchronous)
+- **Horizontal Scalability**: Add workers to increase throughput
+- **Resilience**: Automatic retries, fault tolerance
+- **Complete Audit Trail**: All events logged in Kafka
+- **Replay Capability**: Reprocess historical events
+
+**Event Streams**:
+- `vessel-position-updates` - Real-time vessel location changes
+- `prediction-requests` - Trigger async prediction analysis
+- `prediction-results` - Completed predictions for multiple consumers
+
+**Processing Pattern**:
+- **Producers**: API endpoints publish events immediately
+- **Consumers**: Worker pools process events in parallel
+- **Fan-out**: Single prediction result consumed by DB writer, WebSocket broadcaster, Slack notifier, learning service
+
+**Scalability**:
+- 3-10 prediction workers (scale based on load)
+- Kafka partitioning distributes load across consumers
+- Independent scaling of each consumer type
+
+**Technology**: Apache Kafka 3.x with Zookeeper, confluent-kafka-python client
+
+---
+
+### 2. Interactive Map Visualization
 - **Full-screen Mapbox GL map** with dark theme
 - **Vessel markers** showing real-time positions
 - **Terminal markers** for LNG import/export facilities worldwide
@@ -198,6 +228,16 @@ final_confidence = base_algorithm_score + rag_historical_score + ai_adjustment
 - ✅ Prediction display in popups
 - ✅ Terminal markers
 
+### ✅ Phase 7: Kafka Event-Driven Architecture (Days 29-33)
+- ✅ Kafka & Zookeeper infrastructure
+- ✅ Event schemas (Pydantic models)
+- ✅ Kafka producer service
+- ✅ Kafka consumer base class
+- ✅ Prediction worker consumer
+- ✅ Event-driven API endpoints
+- ✅ Async prediction processing
+- ✅ Fan-out pattern for prediction results
+
 ## Planned Enhancements
 
 ### Short-term
@@ -208,10 +248,13 @@ final_confidence = base_algorithm_score + rag_historical_score + ai_adjustment
 
 ### Medium-term
 - **Multi-vessel Fleet View**: Track entire fleets
-- **Custom Alerts**: User-defined notification rules
+- **Custom Alerts**: User-defined notification rules (easy with Kafka event consumers)
 - **Analytics Dashboard**: Detailed prediction performance metrics
 - **Mobile App**: Native iOS/Android applications
 - **Weather Integration**: Overlay weather conditions
+- **Additional Event Streams**: Vessel arrivals, behavior events, learning feedback
+- **Dead Letter Queue**: Handle failed predictions systematically
+- **Event Replay**: Reprocess historical data for model retraining
 
 ### Long-term
 - **Route Optimization**: Suggest optimal routes

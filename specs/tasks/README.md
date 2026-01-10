@@ -105,10 +105,31 @@ Build an AI-powered LNG vessel destination prediction system with:
 
 ---
 
+### ✅ Phase 7: Kafka Event-Driven Architecture (Days 29-33)
+**File**: [phase7-kafka-integration.md](./phase7-kafka-integration.md)
+
+- Set up Kafka and Zookeeper infrastructure (Docker Compose)
+- Create Kafka topics with proper configuration
+- Implement event schemas (Pydantic models)
+- Build Kafka producer service for publishing events
+- Build Kafka consumer base class
+- Implement prediction worker consumer (async processing)
+- Update API endpoints to publish events (event-driven)
+- Implement fan-out pattern for prediction results
+
+**Deliverables**:
+- Event-driven prediction processing
+- API response time <50ms (vs 5-10s synchronous)
+- Kafka streams for vessel updates and predictions
+- Horizontal scalability support (multiple workers)
+- Complete event audit trail
+
+---
+
 ## How to Use These Tasks
 
 ### Sequential Approach (Recommended)
-Work through phases 1-6 in order. Each phase builds on the previous one.
+Work through phases 1-7 in order. Each phase builds on the previous one.
 
 ```bash
 # Start with Phase 1
@@ -116,12 +137,12 @@ cd /Users/michaelblom/vessel-track
 # Follow instructions in phase1-foundation-database.md
 
 # Once Phase 1 complete, move to Phase 2
-# Continue sequentially through Phase 6
+# Continue sequentially through Phase 7
 ```
 
 ### Parallel Development (Advanced)
 If you have multiple developers:
-- **Backend Team**: Phases 1-5
+- **Backend Team**: Phases 1-5, 7 (event-driven architecture)
 - **Frontend Team**: Phase 6 (can start once Phase 5 API is ready)
 
 ### Verification
@@ -161,6 +182,8 @@ vessel-track/
 - **OpenAI text-embedding-3-small**: Vector embeddings (1536 dimensions)
 - **Redis**: Caching and rate limiting
 - **WebSockets**: Real-time updates
+- **Apache Kafka**: Event streaming for async processing
+- **confluent-kafka-python**: Kafka client library
 
 ### Frontend
 - **Next.js 15**: React framework with App Router
@@ -198,6 +221,15 @@ vessel-track/
 - `app/lib/api-client.ts` (fetch vessels, predictions)
 - `app/lib/websocket.ts` (WebSocket client)
 - `app/app/page.tsx` (main page with real-time updates)
+
+### Phase 7
+- `service/docker-compose.yml` (add Kafka + Zookeeper)
+- `service/src/config.py` (Kafka settings)
+- `service/src/schemas/events.py` (event Pydantic models)
+- `service/src/services/kafka_producer.py` (event publishing)
+- `service/src/services/kafka_consumer.py` (base consumer class)
+- `service/src/services/consumers/prediction_worker.py` (async prediction processing)
+- `service/scripts/create_kafka_topics.sh` (topic creation script)
 
 ## Environment Variables
 

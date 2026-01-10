@@ -6,7 +6,7 @@ This document is the starting point for understanding the Vessel Track project.
 
 **Vessel Track** is an AI-powered full-stack web application for tracking LNG (Liquefied Natural Gas) tanker vessels and predicting their destinations in real-time.
 
-**Status**: Implementation-ready with complete specifications across 6 development phases
+**Status**: Implementation-ready with complete specifications across 7 development phases
 
 ## What Makes This Project Unique
 
@@ -15,10 +15,17 @@ This document is the starting point for understanding the Vessel Track project.
 - **Continuous Learning**: System improves from prediction outcomes
 - **Explainable AI**: Natural language reasoning for every prediction
 
+### Event-Driven Architecture
+- **Apache Kafka**: Asynchronous event streaming for scalable processing
+- **Fast API Response**: <50ms (vs 5-10s synchronous)
+- **Horizontal Scaling**: Add workers to increase throughput
+- **Complete Audit Trail**: All events logged for replay and debugging
+
 ### Full-Stack Architecture
 - **Backend**: FastAPI (Python) with PostgreSQL + pgvector for vector similarity search
 - **Frontend**: Next.js 15 (React 19) with TypeScript and Mapbox GL for visualization
 - **Real-time**: WebSocket integration for live updates
+- **Event Streaming**: Kafka for asynchronous, scalable prediction processing
 
 ### Production-Ready Features
 - REST API with OpenAPI documentation
@@ -36,6 +43,7 @@ This document is the starting point for understanding the Vessel Track project.
 - [architecture.md](architecture.md) - System architecture, data flow, and component design
 - [tech-stack.md](tech-stack.md) - Technology choices and rationale
 - [features.md](features.md) - Complete feature list with implementation status
+- [kafka-architecture.md](kafka-architecture.md) - Event streaming architecture and event schemas
 
 ### Implementation Guides
 - [tasks/README.md](tasks/README.md) - Implementation phases overview
@@ -45,6 +53,7 @@ This document is the starting point for understanding the Vessel Track project.
 - [tasks/phase4-learning-system.md](tasks/phase4-learning-system.md) - Feedback loop (Days 18-21)
 - [tasks/phase5-api-websocket.md](tasks/phase5-api-websocket.md) - API and WebSocket (Days 22-26)
 - [tasks/phase6-frontend-integration.md](tasks/phase6-frontend-integration.md) - Frontend connection (Days 27-28)
+- [tasks/phase7-kafka-integration.md](tasks/phase7-kafka-integration.md) - Event-driven architecture (Days 29-33)
 
 ## Quick Start
 
@@ -130,6 +139,11 @@ Visit:
 - text-embedding-3-small for RAG embeddings
 - pgvector for similarity search
 
+### Event Streaming
+- Apache Kafka 3.x for asynchronous event processing
+- Zookeeper for Kafka coordination
+- confluent-kafka-python client library
+
 ### Infrastructure
 - Docker & Docker Compose
 - Uvicorn ASGI server
@@ -157,6 +171,7 @@ All phases are fully documented with step-by-step instructions:
 - ✅ **Phase 4**: Learning System (Days 18-21)
 - ✅ **Phase 5**: API & WebSocket (Days 22-26)
 - ✅ **Phase 6**: Frontend Integration (Days 27-28)
+- ✅ **Phase 7**: Event-Driven Architecture with Kafka (Days 29-33)
 
 ## Key Innovations
 
