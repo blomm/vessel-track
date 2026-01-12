@@ -2,10 +2,14 @@ from typing import List, Tuple, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 import logging
+from datetime import datetime, timedelta
 
 from src.database.models import Vessel, Terminal, Prediction
 from src.utils.geo import haversine_distance, calculate_bearing, angular_difference
 from src.config import settings
+from src.services.ai_service import AIService
+from src.services.rag_service import RAGService
+from src.services.slack_service import SlackService
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,8 @@ class PredictionEngine:
 
     def __init__(self, db_session: AsyncSession):
         self.db = db_session
+        self.ai_service = AIService()
+        self.rag_service = RAGService(db_session)
 
     async def analyze_vessel(self, vessel_id: str) -> List[PredictionResult]:
         """
@@ -210,3 +216,145 @@ class PredictionEngine:
             return 0.3  # Perpendicular
         else:
             return 0.1  # Heading away
+
+    async def analyze_vessel_with_ai(self, vessel_id: str) -> List[dict]:
+        """
+        Complete prediction pipeline with AI and RAG integration.
+
+        Steps:
+        1. Get vessel and nearby terminals
+        2. Calculate traditional scores (proximity, speed, heading)
+        3. Query RAG for similar historical journeys
+        4. Get learned approach behaviors
+        5. Send all context to GPT-4o for analysis
+        6. Combine scores and create final predictions
+        7. Store in database
+        8. Trigger Slack notifications for high confidence
+
+        Returns:
+            List of prediction dictionaries sorted by confidence
+        """
+        # Get vessel
+        result = await self.db.execute(
+            select(Vessel).where(Vessel.id == vessel_id)
+        )
+        vessel = result.scalar_one_or_none()
+        if not vessel:
+            raise ValueError(f"Vessel {vessel_id} not found")
+
+        # Get terminals
+        result = await self.db.execute(select(Terminal))
+        terminals = result.scalars().all()
+
+        predictions = []
+        slack_service = SlackService()
+
+        for terminal in terminals:
+            # Calculate distance
+            distance_km = haversine_distance(
+                vessel.current_lat, vessel.current_lon,
+                terminal.lat, terminal.lon
+            )
+
+            # Skip if too far
+            if distance_km > settings.PREDICTION_MAX_DISTANCE_KM:
+                continue
+
+            # Traditional scores
+            proximity_score = self.calculate_proximity_score(distance_km)
+            speed_score = self.calculate_speed_score(vessel.speed)
+            heading_score = self.calculate_heading_score(
+                vessel.current_lat, vessel.current_lon,
+                vessel.heading, terminal.lat, terminal.lon
+            )
+
+            base_score = (
+                proximity_score * 0.4 +
+                speed_score * 0.3 +
+                heading_score * 0.3
+            )
+
+            # RAG retrieval
+            similar_journeys = await self.rag_service.find_similar_journeys(
+                vessel, terminal, limit=5
+            )
+            historical_score = self.rag_service.calculate_historical_similarity_score(
+                similar_journeys
+            )
+
+            # Get approach behaviors
+            approach_behaviors = await self.rag_service.get_terminal_approach_patterns(
+                terminal.id, vessel_id=vessel.id
+            )
+
+            # AI analysis
+            ai_result = await self.ai_service.analyze_prediction(
+                vessel=vessel,
+                terminal=terminal,
+                proximity_score=proximity_score,
+                speed_score=speed_score,
+                heading_score=heading_score,
+                historical_matches=similar_journeys,
+                approach_behaviors=approach_behaviors,
+            )
+
+            # Final confidence score
+            final_score = base_score + historical_score + ai_result.confidence_adjustment
+            final_score = max(0.0, min(1.0, final_score))
+
+            # Skip low confidence
+            if final_score < settings.PREDICTION_MIN_CONFIDENCE:
+                continue
+
+            # Calculate ETA
+            eta_hours = None
+            predicted_arrival = None
+            if vessel.speed and vessel.speed > 1.0:
+                eta_hours = distance_km / (vessel.speed * 1.852)
+                predicted_arrival = datetime.utcnow() + timedelta(hours=eta_hours)
+
+            # Create prediction record
+            prediction = Prediction(
+                vessel_id=vessel.id,
+                terminal_id=terminal.id,
+                vessel_lat=vessel.current_lat,
+                vessel_lon=vessel.current_lon,
+                vessel_speed=vessel.speed,
+                vessel_heading=vessel.heading,
+                confidence_score=final_score,
+                distance_to_terminal_km=distance_km,
+                eta_hours=eta_hours,
+                predicted_arrival=predicted_arrival,
+                proximity_score=proximity_score,
+                speed_score=speed_score,
+                heading_score=heading_score,
+                historical_similarity_score=historical_score,
+                ai_confidence_adjustment=ai_result.confidence_adjustment,
+                ai_reasoning=ai_result.reasoning,
+                status='active'
+            )
+
+            self.db.add(prediction)
+            await self.db.flush()  # Get prediction ID
+
+            predictions.append({
+                'prediction_id': prediction.id,
+                'terminal_name': terminal.name,
+                'confidence': final_score,
+                'eta_hours': eta_hours,
+                'ai_reasoning': ai_result.reasoning,
+                'key_factors': ai_result.key_factors
+            })
+
+            # Slack notification for high confidence
+            if final_score >= settings.SLACK_NOTIFICATION_THRESHOLD:
+                await slack_service.send_prediction_alert(prediction)
+                prediction.slack_notification_sent = True
+
+        await self.db.commit()
+
+        logger.info(
+            f"Created {len(predictions)} AI-enhanced predictions for vessel {vessel_id}"
+        )
+
+        return sorted(predictions, key=lambda p: p['confidence'], reverse=True)
